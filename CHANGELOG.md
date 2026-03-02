@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-03-02
+
+### Added
+- Add `plugin_dir` parameter support for Claude Code workers.
+
+### Fixed
+- Suppress Codex CLI update prompts in unattended worker runs.
+- Search for session marker from JSONL beginning to improve startup marker correlation.
+
 ## [0.12.2] - 2026-03-01
 
 ### Fixed
