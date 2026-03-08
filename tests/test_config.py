@@ -43,6 +43,7 @@ class TestDefaultConfig:
         """Default spawn_workers defaults."""
         config = default_config()
         assert config.defaults.agent_type == "claude"
+        assert config.defaults.provider is None
         assert config.defaults.skip_permissions is False
         assert config.defaults.use_worktree is True
         assert config.defaults.layout == "auto"
@@ -103,6 +104,7 @@ class TestSaveConfig:
             commands=CommandsConfig(claude="/custom/claude", codex="/custom/codex"),
             defaults=DefaultsConfig(
                 agent_type="codex",
+                provider="local",
                 skip_permissions=True,
                 use_worktree=False,
                 layout="new",
@@ -123,6 +125,7 @@ class TestSaveConfig:
         assert data["commands"]["claude"] == "/custom/claude"
         assert data["commands"]["codex"] == "/custom/codex"
         assert data["defaults"]["agent_type"] == "codex"
+        assert data["defaults"]["provider"] == "local"
         assert data["defaults"]["skip_permissions"] is True
         assert data["defaults"]["use_worktree"] is False
         assert data["defaults"]["layout"] == "new"
@@ -184,6 +187,7 @@ class TestLoadConfig:
         config = load_config(config_path)
         assert config.commands.claude == "/my/claude"
         assert config.defaults.agent_type == "codex"
+        assert config.defaults.provider is None
         assert config.terminal.backend == "iterm"
         assert config.events.max_size_mb == 10
         assert config.issue_tracker.override == "pebbles"
@@ -198,6 +202,7 @@ class TestLoadConfig:
         # All other fields should have defaults
         assert config.commands.claude is None
         assert config.defaults.agent_type == "claude"
+        assert config.defaults.provider is None
         assert config.terminal.backend is None
         assert config.events.max_size_mb == 1
         assert config.issue_tracker.override is None
@@ -225,6 +230,7 @@ class TestLoadConfig:
             commands=CommandsConfig(claude="/bin/claude", codex="/bin/codex"),
             defaults=DefaultsConfig(
                 agent_type="codex",
+                provider="local",
                 skip_permissions=True,
                 use_worktree=False,
                 layout="new",
@@ -240,6 +246,7 @@ class TestLoadConfig:
         assert loaded.commands.claude == original.commands.claude
         assert loaded.commands.codex == original.commands.codex
         assert loaded.defaults.agent_type == original.defaults.agent_type
+        assert loaded.defaults.provider == original.defaults.provider
         assert loaded.defaults.skip_permissions == original.defaults.skip_permissions
         assert loaded.defaults.use_worktree == original.defaults.use_worktree
         assert loaded.defaults.layout == original.defaults.layout
@@ -466,6 +473,26 @@ class TestFieldTypeValidation:
             "defaults": {"skip_permissions": "yes"},
         }))
         with pytest.raises(ConfigError, match="defaults.skip_permissions must be a boolean"):
+            load_config(config_path)
+
+    def test_defaults_provider_not_string(self, tmp_path: Path):
+        """Non-string provider raises ConfigError."""
+        config_path = tmp_path / "config.json"
+        config_path.write_text(json.dumps({
+            "version": 1,
+            "defaults": {"provider": True},
+        }))
+        with pytest.raises(ConfigError, match="defaults.provider must be a string"):
+            load_config(config_path)
+
+    def test_defaults_provider_empty_string_raises(self, tmp_path: Path):
+        """Empty default provider raises ConfigError."""
+        config_path = tmp_path / "config.json"
+        config_path.write_text(json.dumps({
+            "version": 1,
+            "defaults": {"provider": ""},
+        }))
+        with pytest.raises(ConfigError, match="defaults.provider cannot be empty"):
             load_config(config_path)
 
     def test_defaults_use_worktree_not_bool(self, tmp_path: Path):

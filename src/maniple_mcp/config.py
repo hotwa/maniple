@@ -43,6 +43,7 @@ class DefaultsConfig:
     """Default values applied when spawn_workers fields are omitted."""
 
     agent_type: AgentType = "claude"
+    provider: str | None = None
     skip_permissions: bool = False
     use_worktree: bool = True
     layout: LayoutMode = "auto"
@@ -225,7 +226,7 @@ def _parse_defaults(value: object) -> DefaultsConfig:
     data = _ensure_dict(value, "defaults")
     _validate_keys(
         data,
-        {"agent_type", "skip_permissions", "use_worktree", "layout"},
+        {"agent_type", "provider", "skip_permissions", "use_worktree", "layout"},
         "defaults",
     )
     return DefaultsConfig(
@@ -235,6 +236,7 @@ def _parse_defaults(value: object) -> DefaultsConfig:
             "defaults.agent_type",
             DefaultsConfig.agent_type,
         ),
+        provider=_optional_str(data.get("provider"), "defaults.provider"),
         skip_permissions=_optional_bool(
             data.get("skip_permissions"),
             "defaults.skip_permissions",

@@ -33,6 +33,27 @@ if [[ -f "$MANIPLE_PROVIDER_ENV_FILE" ]]; then
     set +a
 fi
 
+_provider_env_prefix() {
+    printf '%s' "$1" | tr '[:lower:]-' '[:upper:]_'
+}
+
+_apply_provider_env_convention() {
+    local provider_prefix shell_prefix suffix source_var target_var value
+
+    provider_prefix="$(_provider_env_prefix "$provider")"
+
+    for suffix in API_KEY AUTH_TOKEN BASE_URL MODEL; do
+        source_var="MANIPLE_PROVIDER_${provider_prefix}_${suffix}"
+        target_var="${provider_prefix}_${suffix}"
+        value="${!source_var:-}"
+        if [[ -n "$value" && -z "${!target_var:-}" ]]; then
+            export "${target_var}=${value}"
+        fi
+    done
+}
+
+_apply_provider_env_convention
+
 case "$provider" in
     official) claude-official "$@" ;;
     local) claude-local "$@" ;;

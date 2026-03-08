@@ -196,6 +196,101 @@ After adding the configuration, restart Claude Code for it to take effect.
 For a persistent Linux deployment, run `maniple` under `systemd --user` and keep
 logs under `~/.maniple/logs/`.
 
+### Debian/Ubuntu From-Source Setup
+
+This is the recommended path when you want a user-level `systemd` service that
+runs directly from your local checkout and automatically picks up source
+changes after a service restart.
+
+1. Install system packages:
+
+```bash
+sudo apt update
+sudo apt install -y git tmux curl
+```
+
+2. Install `uv` if needed:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+3. Clone and sync the project:
+
+```bash
+git clone https://github.com/Martian-Engineering/maniple.git
+cd maniple
+uv sync --group dev
+```
+
+4. Verify the CLI works from the checkout:
+
+```bash
+uv run maniple --help
+```
+
+5. Create the user service directories:
+
+```bash
+mkdir -p ~/.maniple/logs ~/.config/systemd/user
+```
+
+6. Create `~/.config/systemd/user/maniple.service`:
+
+```ini
+[Unit]
+Description=Maniple MCP Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/you/path/to/maniple
+Environment=MANIPLE_TERMINAL_BACKEND=tmux
+ExecStart=/home/you/.local/bin/uv run --project /home/you/path/to/maniple maniple --http --host 100.64.0.45 --port 8766 --allow-host 100.64.0.45:8766
+Restart=always
+RestartSec=3
+StandardOutput=append:%h/.maniple/logs/maniple.out.log
+StandardError=append:%h/.maniple/logs/maniple.err.log
+
+[Install]
+WantedBy=default.target
+```
+
+7. Load and start the user service:
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now maniple
+systemctl --user status maniple
+```
+
+8. Enable lingering so the service survives reboot without an active desktop login:
+
+```bash
+loginctl enable-linger "$USER"
+```
+
+9. After editing Python source code in the checkout, restart the service:
+
+```bash
+systemctl --user restart maniple
+```
+
+10. After editing the unit file itself, reload systemd and restart:
+
+```bash
+systemctl --user daemon-reload
+systemctl --user restart maniple
+```
+
+11. Tail logs while debugging:
+
+```bash
+journalctl --user -u maniple -n 100 --no-pager
+tail -f ~/.maniple/logs/maniple.out.log ~/.maniple/logs/maniple.err.log
+```
+
 Example unit file at `~/.config/systemd/user/maniple.service`:
 
 ```ini
@@ -268,6 +363,7 @@ maniple config set <key> <value>  # Set and persist a value
   },
   "defaults": {
     "agent_type": "claude",
+    "provider": null,
     "skip_permissions": false,
     "use_worktree": true,
     "layout": "auto"
@@ -290,6 +386,7 @@ maniple config set <key> <value>  # Set and persist a value
 | `commands.claude` | string | Override Claude CLI command (e.g. `"happy"`) |
 | `commands.codex` | string | Override Codex CLI command (e.g. `"happy codex"`) |
 | `defaults.agent_type` | `"claude"` or `"codex"` | Default agent type for new workers |
+| `defaults.provider` | string or null | Default named provider preset for `spawn_workers` when a worker omits `provider` |
 | `defaults.skip_permissions` | bool | Default `--dangerously-skip-permissions` flag |
 | `defaults.use_worktree` | bool | Create git worktrees by default |
 | `defaults.layout` | `"auto"` or `"new"` | Default layout mode for spawn_workers |
@@ -370,6 +467,98 @@ export LOCAL_BASE_URL="http://127.0.0.1:4000"
 export LOCAL_MODEL="claude-3-5-sonnet"
 ```
 
+Recommended convention for `~/.maniple/.env`:
+
+```bash
+export MANIPLE_PROVIDER_MINIMAX_API_KEY="replace-me"
+export MANIPLE_PROVIDER_MINIMAX_BASE_URL="https://api.minimaxi.com/anthropic"
+export MANIPLE_PROVIDER_MINIMAX_MODEL="MiniMax-M2.1"
+
+export MANIPLE_PROVIDER_KIMI_API_KEY="replace-me"
+export MANIPLE_PROVIDER_KIMI_BASE_URL="https://api.moonshot.cn/anthropic"
+export MANIPLE_PROVIDER_KIMI_MODEL="kimi-k2-thinking-turbo"
+
+export MANIPLE_PROVIDER_LOCAL_API_KEY="replace-me"
+export MANIPLE_PROVIDER_LOCAL_BASE_URL="http://127.0.0.1:4000"
+export MANIPLE_PROVIDER_LOCAL_MODEL="claude-3-5-sonnet"
+```
+
+The wrapper maps these namespaced variables automatically based on the selected
+provider name. The convention is:
+
+```text
+provider name in config:     local
+CLAUDE_SWITCH_PROVIDER:      local
+~/.maniple/.env prefix:      MANIPLE_PROVIDER_LOCAL_
+provider env aliases loaded: LOCAL_API_KEY / LOCAL_BASE_URL / LOCAL_MODEL
+```
+
+Examples:
+- `provider: "kimi"` -> reads `MANIPLE_PROVIDER_KIMI_*`
+- `provider: "minimax"` -> reads `MANIPLE_PROVIDER_MINIMAX_*`
+- `provider: "local2"` -> reads `MANIPLE_PROVIDER_LOCAL2_*`
+
+This keeps provider selection in `~/.maniple/config.json` and provider secrets
+in `~/.maniple/.env`, with a predictable naming rule between them.
+
+### Adding or Removing Providers
+
+To add a provider:
+
+1. Ensure your wrapper supports it in the `case "$provider" in ... esac` block.
+2. Add a preset under `providers` in `~/.maniple/config.json`.
+3. Add matching `MANIPLE_PROVIDER_<NAME>_*` values to `~/.maniple/.env`.
+4. Restart the MCP service if it is running under `systemd --user`.
+
+Example: add `local2`
+
+`~/.maniple/config.json`
+
+```json
+{
+  "providers": {
+    "local2": {
+      "command": "/home/you/bin/claude-maniple-switch",
+      "env": {
+        "CLAUDE_SWITCH_PROVIDER": "local2"
+      }
+    }
+  }
+}
+```
+
+`~/.maniple/.env`
+
+```bash
+export MANIPLE_PROVIDER_LOCAL2_API_KEY="replace-me"
+export MANIPLE_PROVIDER_LOCAL2_BASE_URL="http://127.0.0.1:4001"
+export MANIPLE_PROVIDER_LOCAL2_MODEL="claude-3-5-sonnet"
+```
+
+To remove a provider:
+
+1. Delete its preset from `~/.maniple/config.json`
+2. Optionally delete its `MANIPLE_PROVIDER_<NAME>_*` lines from `~/.maniple/.env`
+3. Restart the MCP service if needed
+
+Service reload after provider changes:
+
+```bash
+systemctl --user restart maniple
+```
+
+Set a default provider for workers that do not specify one explicitly:
+
+```bash
+maniple config set defaults.provider local
+```
+
+Clear the default provider:
+
+```bash
+maniple config set defaults.provider null
+```
+
 Example wrapper at `~/bin/claude-maniple-switch`:
 
 ```bash
@@ -433,6 +622,53 @@ Minimal `spawn_workers` example:
 }
 ```
 
+### MCP Client Usage
+
+Recommended client flow:
+
+1. Call `list_providers` to discover available named provider presets.
+2. Call `spawn_workers` with `provider: "<name>"`.
+3. Put the actual task in the worker `prompt`.
+
+Structured example:
+
+```json
+{
+  "workers": [
+    {
+      "project_path": "/repo",
+      "provider": "kimi",
+      "prompt": "Inspect the training pipeline and fix the failing evaluation step.",
+      "skip_permissions": true
+    }
+  ],
+  "layout": "new"
+}
+```
+
+Minimal natural-language prompt examples for MCP-capable clients:
+
+```text
+先调用 list_providers，告诉我当前可用的 provider 名字。
+```
+
+```text
+调用 spawn_workers，在 /repo 启动 1 个 Claude worker，provider 用 kimi，skip_permissions=true，prompt 用“检查训练脚本报错并修复”。
+```
+
+```text
+调用 spawn_workers，在 /repo 启动 1 个 Claude worker，provider 用 local2，layout 用 new，prompt 用“检查 API 服务启动失败的原因并修复”。
+```
+
+Prompt-writing guidance for reliable tool invocation:
+- Name the MCP tool explicitly: `list_providers` or `spawn_workers`
+- Specify the provider name exactly as returned by `list_providers`
+- Put the worker's assignment into the `prompt` field
+- Include `project_path` explicitly
+- Use `skip_permissions: true` when the worker needs to edit files or run commands
+
+`spawn_work` is not a valid tool name; use `spawn_workers`.
+
 ### First-Run Notes for Claude Workers
 
 When testing autonomous Claude workers, the MCP service itself may be healthy but
@@ -455,9 +691,10 @@ After that, service-mode orchestration is much smoother.
 | `spawn_workers` | Create workers with multi-pane layouts. Supports Claude Code and Codex agents. |
 | `list_workers` | List all managed workers with status. Filter by status or project. |
 | `examine_worker` | Get detailed worker status including conversation stats and last response preview. |
-| `close_workers` | Gracefully terminate one or more workers. Worktree branches are preserved. |
+| `close_workers` | Gracefully terminate one or more workers. Worktree branches are preserved by default, or deleted with `delete_branch: true`. |
 | `discover_workers` | Find existing Claude Code/Codex sessions running in tmux or iTerm2. |
 | `adopt_worker` | Import a discovered session into the managed registry. |
+| `list_providers` | List configured Claude-compatible provider presets from `~/.maniple/config.json`. |
 
 ### Communication
 
@@ -538,6 +775,32 @@ Returns:
   success, session_ids, results, [idle_session_ids, all_idle, timed_out]
 ```
 
+#### close_workers
+
+```
+Arguments:
+  session_ids: list[str]   - Worker IDs to close (accepts any identifier format)
+  force: bool              - Force close even if a worker is busy
+  delete_branch: bool      - Also delete the worker branch after removing its
+                             worktree (default: false)
+
+Returns:
+  session_ids, results, success_count, failure_count
+```
+
+Worktree cleanup behavior:
+- By default, `close_workers` removes the worker worktree directory and keeps the branch.
+- Set `delete_branch: true` to remove both the worktree and its branch in one call.
+
+Example:
+
+```json
+{
+  "session_ids": ["Hypatia"],
+  "delete_branch": true
+}
+```
+
 #### wait_idle_workers
 
 ```
@@ -550,6 +813,16 @@ Arguments:
 Returns:
   session_ids, idle_session_ids, all_idle, waiting_on, mode, waited_seconds, timed_out
 ```
+
+#### list_providers
+
+```
+Returns:
+  config_path, count, provider_names, providers, usage_tip
+```
+
+Use this when an MCP client wants to discover which named provider presets are
+available before calling `spawn_workers` with `provider: "<name>"`.
 
 #### poll_worker_changes
 
