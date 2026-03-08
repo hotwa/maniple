@@ -229,6 +229,20 @@ uv sync --group dev
 uv run maniple --help
 ```
 
+Quick-start helpers from this repo:
+
+```bash
+# Install/update ~/bin/claude-maniple-switch and create starter files:
+bash scripts/setup-provider-presets.sh
+
+# Install/update ~/.config/systemd/user/maniple.service for this checkout:
+bash scripts/install-systemd-user.sh
+```
+
+These scripts create the files for you and keep existing user config files in
+place. After they run, you still need to edit `~/.maniple/config.json` and
+`~/.maniple/.env` with your actual provider choices and credentials.
+
 5. Create the user service directories:
 
 ```bash
@@ -423,6 +437,18 @@ Minimal setup:
 2. Install `~/bin/claude-maniple-switch`
 3. Add named presets under `providers` in `~/.maniple/config.json`
 4. Call `spawn_workers` with `provider: "minimax"` or `provider: "kimi"` or `provider: "local"`
+
+Bootstrap these files automatically:
+
+```bash
+bash scripts/setup-provider-presets.sh
+```
+
+That script will:
+- install `~/bin/claude-maniple-switch`
+- create `~/.maniple/config.json` if it does not exist
+- create `~/.maniple/.env` if it does not exist
+- leave existing files untouched and print the next manual steps
 
 Define named presets in `~/.maniple/config.json` and reference them per worker:
 
