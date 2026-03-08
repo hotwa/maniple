@@ -12,6 +12,7 @@ from maniple_mcp.config import (
     DefaultsConfig,
     EventsConfig,
     IssueTrackerConfig,
+    ProviderConfig,
     TerminalConfig,
     default_config,
     load_config,
@@ -63,6 +64,11 @@ class TestDefaultConfig:
         config = default_config()
         assert config.issue_tracker.override is None
 
+    def test_default_providers(self):
+        """Default provider presets should be empty."""
+        config = default_config()
+        assert config.providers == {}
+
 
 class TestSaveConfig:
     """Tests for save_config function."""
@@ -104,6 +110,12 @@ class TestSaveConfig:
             terminal=TerminalConfig(backend="tmux"),
             events=EventsConfig(max_size_mb=5, recent_hours=48, stale_threshold_minutes=15),
             issue_tracker=IssueTrackerConfig(override="beads"),
+            providers={
+                "local": ProviderConfig(
+                    command="/usr/local/bin/claude-local",
+                    env={"CLAUDE_PROVIDER": "local"},
+                )
+            },
         )
         save_config(config, config_path)
         data = json.loads(config_path.read_text())
@@ -119,6 +131,8 @@ class TestSaveConfig:
         assert data["events"]["recent_hours"] == 48
         assert data["events"]["stale_threshold_minutes"] == 15
         assert data["issue_tracker"]["override"] == "beads"
+        assert data["providers"]["local"]["command"] == "/usr/local/bin/claude-local"
+        assert data["providers"]["local"]["env"] == {"CLAUDE_PROVIDER": "local"}
 
     def test_json_is_formatted(self, tmp_path: Path):
         """Saved JSON is indented for readability."""
@@ -160,6 +174,12 @@ class TestLoadConfig:
             "terminal": {"backend": "iterm"},
             "events": {"max_size_mb": 10},
             "issue_tracker": {"override": "pebbles"},
+            "providers": {
+                "local": {
+                    "command": "/usr/local/bin/claude-local",
+                    "env": {"CLAUDE_PROVIDER": "local"},
+                }
+            },
         }))
         config = load_config(config_path)
         assert config.commands.claude == "/my/claude"
@@ -167,6 +187,8 @@ class TestLoadConfig:
         assert config.terminal.backend == "iterm"
         assert config.events.max_size_mb == 10
         assert config.issue_tracker.override == "pebbles"
+        assert config.providers["local"].command == "/usr/local/bin/claude-local"
+        assert config.providers["local"].env == {"CLAUDE_PROVIDER": "local"}
 
     def test_partial_config_uses_defaults(self, tmp_path: Path):
         """Missing sections use default values."""
@@ -210,6 +232,7 @@ class TestLoadConfig:
             terminal=TerminalConfig(backend="tmux"),
             events=EventsConfig(max_size_mb=2, recent_hours=12, stale_threshold_minutes=30),
             issue_tracker=IssueTrackerConfig(override="beads"),
+            providers={"local": ProviderConfig(env={"CLAUDE_PROVIDER": "local"})},
         )
         save_config(original, config_path)
         loaded = load_config(config_path)
@@ -225,6 +248,7 @@ class TestLoadConfig:
         assert loaded.events.recent_hours == original.events.recent_hours
         assert loaded.events.stale_threshold_minutes == original.events.stale_threshold_minutes
         assert loaded.issue_tracker.override == original.issue_tracker.override
+        assert loaded.providers == original.providers
 
 
 class TestJsonValidationErrors:

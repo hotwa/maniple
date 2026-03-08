@@ -468,6 +468,7 @@ class TmuxBackend(TerminalBackend):
         stop_hook_marker_id: str | None = None,
         output_capture_path: str | None = None,
         plugin_dir: str | None = None,
+        command_override: str | None = None,
     ) -> None:
         """Start a CLI agent in an existing tmux pane."""
         # Ensure the shell is responsive before we send the launch command.
@@ -482,7 +483,7 @@ class TmuxBackend(TerminalBackend):
 
         # Optionally inject a Stop hook using a settings file (Claude only).
         settings_file = None
-        if stop_hook_marker_id and cli.supports_settings_file():
+        if stop_hook_marker_id and cli.supports_settings_file(command_override=command_override):
             from ..iterm_utils import build_stop_hook_settings_file
 
             settings_file = build_stop_hook_settings_file(stop_hook_marker_id)
@@ -493,6 +494,7 @@ class TmuxBackend(TerminalBackend):
             settings_file=settings_file,
             plugin_dir=plugin_dir,
             env_vars=env,
+            command_override=command_override,
         )
 
         # Capture stdout/stderr if requested (useful for JSONL idle detection).
@@ -509,10 +511,11 @@ class TmuxBackend(TerminalBackend):
             cli,
             timeout_seconds=agent_ready_timeout,
         )
+        effective_command = command_override or cli.command()
         if not agent_ready:
             raise RuntimeError(
                 f"{cli.engine_id} failed to start in {project_path} within "
-                f"{agent_ready_timeout}s. Check that '{cli.command()}' is "
+                f"{agent_ready_timeout}s. Check that '{effective_command}' is "
                 "available and authentication is configured."
             )
 

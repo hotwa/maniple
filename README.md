@@ -62,6 +62,36 @@ Workers can run either Claude Code or OpenAI Codex. Set `agent_type: "codex"` in
 - **HTTP Mode**: Run as a persistent service with streamable-http transport
 - **Config File**: Centralized configuration at `~/.maniple/config.json`
 
+### HTTP Mode
+
+Use `--host` to change the bind address for streamable HTTP mode:
+
+```bash
+uv run python -m maniple_mcp --http --host 0.0.0.0 --port 8766
+```
+
+If you want DNS rebinding protection enabled for non-localhost clients, add
+repeatable `--allow-host` entries and optional `--allow-origin` entries:
+
+```bash
+uv run python -m maniple_mcp \
+  --http \
+  --host 100.64.0.45 \
+  --port 8766 \
+  --allow-host 100.64.0.45:8766 \
+  --allow-host my-tailnet-host.ts.net:8766
+```
+
+For temporary experiments on a trusted network, you can disable the protection:
+
+```bash
+uv run python -m maniple_mcp \
+  --http \
+  --host 100.64.0.45 \
+  --port 8766 \
+  --disable-dns-rebinding-protection
+```
+
 ## Requirements
 
 - Python 3.11+
@@ -213,7 +243,111 @@ maniple config set <key> <value>  # Set and persist a value
 | `MANIPLE_TERMINAL_BACKEND` | (auto-detect) | Force terminal backend: `tmux` or `iterm`. Highest precedence. |
 | `MANIPLE_PROJECT_DIR` | (none) | Enables `"project_path": "auto"` in worker configs. |
 | `MANIPLE_COMMAND` | `claude` | Override the CLI command for Claude Code workers. |
+| `MANIPLE_CLAUDE_SUPPORTS_SETTINGS` | auto | Force custom Claude wrappers to receive `--settings` so stop hooks still work. |
 | `MANIPLE_CODEX_COMMAND` | `codex` | Override the CLI command for Codex workers. |
+
+### Provider Presets
+
+For multiple Claude-compatible providers, keep the files separated like this:
+
+- Main config: `~/.maniple/config.json`
+- Provider credentials: `~/.maniple/.env`
+- Wrapper executable: `~/bin/claude-maniple-switch`
+
+The wrapper can source an existing `claude-switch` installation, but it reads
+provider credentials from `~/.maniple/.env` so users do not need to depend on
+`~/.claude-switch/.env` or the repository checkout for secrets.
+
+Define named presets in `~/.maniple/config.json` and reference them per worker:
+
+```json
+{
+  "providers": {
+    "minimax": {
+      "command": "/home/you/bin/claude-maniple-switch",
+      "env": {
+        "CLAUDE_SWITCH_PROVIDER": "minimax"
+      }
+    },
+    "kimi": {
+      "command": "/home/you/bin/claude-maniple-switch",
+      "env": {
+        "CLAUDE_SWITCH_PROVIDER": "kimi"
+      }
+    },
+    "local": {
+      "command": "/home/you/bin/claude-maniple-switch",
+      "env": {
+        "CLAUDE_SWITCH_PROVIDER": "local"
+      }
+    }
+  }
+}
+```
+
+Example `~/.maniple/.env`:
+
+```bash
+export MINIMAX_API_KEY="replace-me"
+export MINIMAX_BASE_URL="https://api.minimaxi.com/anthropic"
+export MINIMAX_MODEL="MiniMax-M2.1"
+
+export KIMI_API_KEY="replace-me"
+export KIMI_BASE_URL="https://api.moonshot.cn/anthropic"
+export KIMI_MODEL="kimi-k2-thinking-turbo"
+
+export LOCAL_API_KEY="replace-me"
+export LOCAL_BASE_URL="http://127.0.0.1:4000"
+export LOCAL_MODEL="claude-3-5-sonnet"
+```
+
+Example wrapper at `~/bin/claude-maniple-switch`:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+CLAUDE_SWITCH_DIR="${CLAUDE_SWITCH_DIR:-$HOME/.local/bin/claude-switch}"
+CLAUDE_SWITCH_SCRIPT="${CLAUDE_SWITCH_SCRIPT:-$CLAUDE_SWITCH_DIR/claude-providers-v3.sh}"
+MANIPLE_PROVIDER_ENV_FILE="${MANIPLE_PROVIDER_ENV_FILE:-$HOME/.maniple/.env}"
+provider="${CLAUDE_SWITCH_PROVIDER:-official}"
+
+source "$CLAUDE_SWITCH_SCRIPT" >/dev/null 2>&1
+
+if [[ -f "$MANIPLE_PROVIDER_ENV_FILE" ]]; then
+  set -a
+  source "$MANIPLE_PROVIDER_ENV_FILE" >/dev/null 2>&1
+  set +a
+fi
+
+case "$provider" in
+  minimax) claude-minimax "$@" ;;
+  kimi) claude-kimi "$@" ;;
+  local) claude-local "$@" ;;
+  official) claude-official "$@" ;;
+  *) echo "Unknown CLAUDE_SWITCH_PROVIDER: $provider" >&2; exit 1 ;;
+esac
+```
+
+Then use either a named `provider` preset or direct `command` / `env` overrides:
+
+```json
+{
+  "workers": [
+    {
+      "project_path": "/repo",
+      "provider": "kimi"
+    },
+    {
+      "project_path": "/repo",
+      "command": "/home/you/bin/claude-maniple-switch",
+      "env": {
+        "CLAUDE_SWITCH_PROVIDER": "local"
+      }
+    }
+  ]
+}
+```
 
 ## MCP Tools
 

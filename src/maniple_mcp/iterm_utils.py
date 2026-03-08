@@ -638,6 +638,7 @@ async def start_agent_in_session(
     stop_hook_marker_id: Optional[str] = None,
     output_capture_path: Optional[str] = None,
     plugin_dir: Optional[str | list[str]] = None,
+    command_override: Optional[str] = None,
 ) -> None:
     """
     Start an agent CLI in an existing iTerm2 session.
@@ -673,7 +674,7 @@ async def start_agent_in_session(
 
     # Build settings file for Stop hook injection if supported
     settings_file = None
-    if stop_hook_marker_id and cli.supports_settings_file():
+    if stop_hook_marker_id and cli.supports_settings_file(command_override=command_override):
         settings_file = build_stop_hook_settings_file(stop_hook_marker_id)
 
     # Build the full command using the AgentCLI abstraction
@@ -682,6 +683,7 @@ async def start_agent_in_session(
         settings_file=settings_file,
         plugin_dir=plugin_dir,
         env_vars=env,
+        command_override=command_override,
     )
 
     # Add output capture via tee if requested
@@ -698,12 +700,13 @@ async def start_agent_in_session(
     await send_prompt(session, cmd)
 
     # Wait for agent to actually start (detect ready patterns, not blind sleep)
+    effective_command = command_override or cli.command()
     if not await wait_for_agent_ready(
         session, cli, timeout_seconds=agent_ready_timeout
     ):
         raise RuntimeError(
             f"{cli.engine_id} failed to start in {project_path} within "
-            f"{agent_ready_timeout}s. Check that '{cli.command()}' command is "
+            f"{agent_ready_timeout}s. Check that '{effective_command}' command is "
             "available and authentication is configured."
         )
 

@@ -72,6 +72,14 @@ class IssueTrackerConfig:
 
 
 @dataclass
+class ProviderConfig:
+    """Named command/env preset for worker launches."""
+
+    command: str | None = None
+    env: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
 class ClaudeTeamConfig:
     """Top-level configuration container for claude-team."""
 
@@ -81,6 +89,7 @@ class ClaudeTeamConfig:
     terminal: TerminalConfig = field(default_factory=TerminalConfig)
     events: EventsConfig = field(default_factory=EventsConfig)
     issue_tracker: IssueTrackerConfig = field(default_factory=IssueTrackerConfig)
+    providers: dict[str, ProviderConfig] = field(default_factory=dict)
 
 
 def default_config() -> ClaudeTeamConfig:
@@ -159,7 +168,15 @@ def _parse_config(data: dict) -> ClaudeTeamConfig:
     # Validate expected top-level keys before parsing sections.
     _validate_keys(
         data,
-        {"version", "commands", "defaults", "terminal", "events", "issue_tracker"},
+        {
+            "version",
+            "commands",
+            "defaults",
+            "terminal",
+            "events",
+            "issue_tracker",
+            "providers",
+        },
         "config",
     )
     version = _read_version(data.get("version"))
@@ -168,6 +185,7 @@ def _parse_config(data: dict) -> ClaudeTeamConfig:
     terminal = _parse_terminal(data.get("terminal"))
     events = _parse_events(data.get("events"))
     issue_tracker = _parse_issue_tracker(data.get("issue_tracker"))
+    providers = _parse_providers(data.get("providers"))
     return ClaudeTeamConfig(
         version=version,
         commands=commands,
@@ -175,6 +193,7 @@ def _parse_config(data: dict) -> ClaudeTeamConfig:
         terminal=terminal,
         events=events,
         issue_tracker=issue_tracker,
+        providers=providers,
     )
 
 
@@ -291,6 +310,25 @@ def _parse_issue_tracker(value: object) -> IssueTrackerConfig:
     )
 
 
+def _parse_providers(value: object) -> dict[str, ProviderConfig]:
+    # Parse named worker launch provider presets.
+    data = _ensure_dict(value, "providers")
+    providers: dict[str, ProviderConfig] = {}
+    for provider_name, provider_value in data.items():
+        if not isinstance(provider_name, str) or not provider_name.strip():
+            raise ConfigError("providers keys must be non-empty strings")
+        provider_data = _ensure_dict(provider_value, f"providers.{provider_name}")
+        _validate_keys(provider_data, {"command", "env"}, f"providers.{provider_name}")
+        providers[provider_name] = ProviderConfig(
+            command=_optional_str(
+                provider_data.get("command"),
+                f"providers.{provider_name}.command",
+            ),
+            env=_optional_str_map(provider_data.get("env"), f"providers.{provider_name}.env"),
+        )
+    return providers
+
+
 def _ensure_dict(value: object, path: str) -> dict:
     # Ensure sections are JSON objects, defaulting to empty dicts.
     if value is None:
@@ -356,6 +394,23 @@ def _optional_literal(
     return value
 
 
+def _optional_str_map(value: object, path: str) -> dict[str, str]:
+    # Validate optional string-to-string maps.
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ConfigError(f"{path} must be a JSON object")
+
+    result: dict[str, str] = {}
+    for key, item in value.items():
+        if not isinstance(key, str) or not key.strip():
+            raise ConfigError(f"{path} keys must be non-empty strings")
+        if not isinstance(item, str):
+            raise ConfigError(f"{path}.{key} must be a string")
+        result[key] = item
+    return result
+
+
 __all__ = [
     "AgentType",
     "ClaudeTeamConfig",
@@ -365,6 +420,7 @@ __all__ = [
     "EventsConfig",
     "IssueTrackerConfig",
     "LayoutMode",
+    "ProviderConfig",
     "TerminalBackend",
     "TerminalConfig",
     "IssueTrackerName",

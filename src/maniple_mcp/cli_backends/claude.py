@@ -6,6 +6,7 @@ This preserves the existing behavior from iterm_utils.py.
 """
 
 from typing import Literal
+from pathlib import Path
 
 from .base import AgentCLI
 from ..utils.env_vars import get_env_with_fallback
@@ -16,6 +17,8 @@ _DEFAULT_COMMAND = "claude"
 # Environment variables for command override (takes highest precedence).
 _ENV_VAR = "MANIPLE_COMMAND"
 _ENV_VAR_FALLBACK = "CLAUDE_TEAM_COMMAND"
+_SETTINGS_ENV_VAR = "MANIPLE_CLAUDE_SUPPORTS_SETTINGS"
+_SETTINGS_ENV_VAR_FALLBACK = "CLAUDE_TEAM_CLAUDE_SUPPORTS_SETTINGS"
 
 
 def get_claude_command() -> str:
@@ -51,6 +54,24 @@ def get_claude_command() -> str:
     return _DEFAULT_COMMAND
 
 
+def _command_supports_settings(command: str) -> bool:
+    """
+    Decide whether a Claude command wrapper should receive --settings.
+
+    Default behavior stays conservative for custom commands, but wrappers can opt in
+    explicitly via env when they simply inject provider env vars and then exec Claude.
+    """
+    if command == _DEFAULT_COMMAND:
+        return True
+
+    env_val = get_env_with_fallback(_SETTINGS_ENV_VAR, _SETTINGS_ENV_VAR_FALLBACK)
+    if env_val:
+        return env_val.strip().lower() in {"1", "true", "yes", "on"}
+
+    command_name = Path(command.split()[0]).name
+    return command_name.startswith("claude-")
+
+
 class ClaudeCLI(AgentCLI):
     """
     Claude Code CLI implementation.
@@ -84,6 +105,7 @@ class ClaudeCLI(AgentCLI):
         dangerously_skip_permissions: bool = False,
         settings_file: str | None = None,
         plugin_dir: str | list[str] | None = None,
+        command_override: str | None = None,
     ) -> list[str]:
         """
         Build Claude CLI arguments.
@@ -108,10 +130,9 @@ class ClaudeCLI(AgentCLI):
                 args.append("--plugin-dir")
                 args.append(dir_path)
 
-        # Only add --settings for the default 'claude' command.
-        # Custom commands like 'happy' have their own session tracking mechanisms.
-        # See HAPPY_INTEGRATION_RESEARCH.md for full analysis.
-        if settings_file and self._is_default_command():
+        # Only add --settings when the command is known to pass through to Claude.
+        # Wrapper commands can opt in explicitly via MANIPLE_CLAUDE_SUPPORTS_SETTINGS.
+        if settings_file and self.supports_settings_file(command_override=command_override):
             args.append("--settings")
             args.append(settings_file)
 
@@ -142,14 +163,14 @@ class ClaudeCLI(AgentCLI):
         """
         return "stop_hook"
 
-    def supports_settings_file(self) -> bool:
+    def supports_settings_file(self, command_override: str | None = None) -> bool:
         """
         Claude supports --settings for hook injection.
 
         Only returns True for the default 'claude' command.
         Custom wrappers may have their own settings mechanisms.
         """
-        return self._is_default_command()
+        return _command_supports_settings(command_override or get_claude_command())
 
     def _is_default_command(self) -> bool:
         """Check if using the default 'claude' command (not a custom wrapper)."""
